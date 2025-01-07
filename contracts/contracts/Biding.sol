@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-contract UpworkPlatform {
+contract Biding {
     // Struct pentru job-uri
     struct Job {
         uint256 id;
