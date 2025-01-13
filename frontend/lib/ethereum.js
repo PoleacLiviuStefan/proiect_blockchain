@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import contractJSON from '../../contracts/artifacts/contracts/Biding.sol/Biding.json'
 const contractABI = contractJSON.abi
 // Adresa contractului implementat
-const contractAddress = '0xf504b2860af3629fa55decdcba5aabe6067993fab5e73c7011c77b3452fbfca6';
+const contractAddress = '0x84A655e3e21a38670976a81A1c1A361b236A503f';
 
 
 // Funcție pentru a obține un provider și un semnatar
