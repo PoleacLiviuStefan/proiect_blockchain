@@ -1,8 +1,7 @@
-
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 contract Biding {
-   
     struct Job {
         uint256 id;
         address payable employer;
@@ -10,67 +9,73 @@ contract Biding {
         uint256 budget;
         bool isCompleted;
         address payable winner;
+        uint256 lockedFunds;    // Fonduri blocate pentru job
     }
 
-   
     struct Bid {
         address payable freelancer;
         uint256 bidAmount;
     }
 
-   
-    mapping(uint256 => Job) public jobs; // Job ID -> Job
-    mapping(uint256 => Bid[]) public bids; // Job ID -> Listă de licitații
-
+    mapping(uint256 => Job) public jobs;
+    mapping(uint256 => Bid[]) public bids;
     uint256 public jobCounter;
 
-   
     event JobPosted(uint256 indexed jobId, address indexed employer, uint256 budget);
     event BidPlaced(uint256 indexed jobId, address indexed freelancer, uint256 bidAmount);
     event WinnerSelected(uint256 indexed jobId, address indexed winner, uint256 winningBid);
     event PaymentReleased(uint256 indexed jobId, address indexed freelancer, uint256 amount);
 
-    
     modifier onlyEmployer(uint256 jobId) {
         require(msg.sender == jobs[jobId].employer, "Only employer can call this function.");
         _;
     }
 
-    modifier onlyWinner(uint256 jobId) {
-        require(msg.sender == jobs[jobId].winner, "Only winner can call this function.");
+    modifier jobExists(uint256 jobId) {
+        require(jobs[jobId].id == jobId, "Job does not exist.");
         _;
     }
 
-    // Functie pentru postarea unui job
-    function postJob(string memory description, uint256 budget) external {
-        require(budget > 0, "Budget must be greater than zero.");
+    function postJob(string memory description) external payable {
+        require(msg.value > 0, "Budget must be greater than zero.");
         jobCounter++;
 
         jobs[jobCounter] = Job({
             id: jobCounter,
             employer: payable(msg.sender),
             description: description,
-            budget: budget,
+            budget: msg.value,
             isCompleted: false,
-            winner: payable(address(0))
+            winner: payable(address(0)),
+            lockedFunds: msg.value // Blocăm fondurile când se creează job-ul
         });
 
-        emit JobPosted(jobCounter, msg.sender, budget);
+        emit JobPosted(jobCounter, msg.sender, msg.value);
     }
 
-    // Functie pentru plasarea unei licitatii
-    function placeBid(uint256 jobId) external payable {
-        require(jobs[jobId].id == jobId, "Job does not exist.");
-        require(msg.value > 0, "Bid amount must be greater than zero.");
-        bids[jobId].push(Bid({freelancer: payable(msg.sender), bidAmount: msg.value}));
+    function placeBid(uint256 jobId, uint256 bidAmount) external jobExists(jobId) {
+        require(msg.sender != jobs[jobId].employer, "Employer cannot bid on their own job");
+        require(!jobs[jobId].isCompleted, "Job is already completed");
+        require(jobs[jobId].winner == address(0), "Winner already selected");
+        require(bidAmount > 0, "Bid amount must be greater than zero");
+        require(bidAmount < jobs[jobId].budget, "Bid must be lower than job budget");
 
-        emit BidPlaced(jobId, msg.sender, msg.value);
+        for(uint i = 0; i < bids[jobId].length; i++) {
+            require(bids[jobId][i].freelancer != msg.sender, "You have already placed a bid");
+        }
+
+        bids[jobId].push(Bid({
+            freelancer: payable(msg.sender),
+            bidAmount: bidAmount
+        }));
+
+        emit BidPlaced(jobId, msg.sender, bidAmount);
     }
 
-    // Functie pentru alegerea unui castigator
-    function selectWinner(uint256 jobId, uint256 bidIndex) external onlyEmployer(jobId) {
-        require(jobs[jobId].winner == address(0), "Winner already selected.");
-        require(bidIndex < bids[jobId].length, "Invalid bid index.");
+    function selectWinner(uint256 jobId, uint256 bidIndex) external onlyEmployer(jobId) jobExists(jobId) {
+        require(jobs[jobId].winner == address(0), "Winner already selected");
+        require(bidIndex < bids[jobId].length, "Invalid bid index");
+        require(!jobs[jobId].isCompleted, "Job is already completed");
 
         Bid memory winningBid = bids[jobId][bidIndex];
         jobs[jobId].winner = winningBid.freelancer;
@@ -78,33 +83,43 @@ contract Biding {
         emit WinnerSelected(jobId, winningBid.freelancer, winningBid.bidAmount);
     }
 
-    // Functie pentru marcarea job-ului ca finalizat și trimiterea platii
-    function completeJob(uint256 jobId) external onlyEmployer(jobId) {
-        require(jobs[jobId].winner != address(0), "No winner selected.");
-        require(!jobs[jobId].isCompleted, "Job already completed.");
+ function completeJob(uint256 jobId) external onlyEmployer(jobId) jobExists(jobId) {
+        require(jobs[jobId].winner != address(0), "No winner selected");
+        require(!jobs[jobId].isCompleted, "Job already completed");
+        require(jobs[jobId].lockedFunds > 0, "No funds locked for this job");
 
-       
-        uint256 winningBidAmount = 0;
-        for (uint i = 0; i < bids[jobId].length; i++) {
-            if (bids[jobId][i].freelancer == jobs[jobId].winner) {
-                winningBidAmount = bids[jobId][i].bidAmount;
+        // Găsim suma licitată de câștigător
+        uint256 winnerBid = 0;
+        for(uint i = 0; i < bids[jobId].length; i++) {
+            if(bids[jobId][i].freelancer == jobs[jobId].winner) {
+                winnerBid = bids[jobId][i].bidAmount;
                 break;
             }
         }
-        
-        require(winningBidAmount > 0, "Winning bid not found");
-        
-        jobs[jobId].isCompleted = true;
-        
-       
-        jobs[jobId].winner.transfer(winningBidAmount);
 
-        emit PaymentReleased(jobId, jobs[jobId].winner, winningBidAmount);
+        require(winnerBid > 0, "Winner bid not found");
+
+        // Transferăm suma licitată către câștigător
+        jobs[jobId].winner.transfer(winnerBid);
+
+        // Calculăm și transferăm restul către angajator
+        uint256 remainingFunds = jobs[jobId].budget - winnerBid;
+        if(remainingFunds > 0) {
+            jobs[jobId].employer.transfer(remainingFunds);
+        }
+
+        jobs[jobId].isCompleted = true;
+        jobs[jobId].lockedFunds = 0;
+
+        emit PaymentReleased(jobId, jobs[jobId].winner, winnerBid);
     }
 
-
-    // Funcție view pentru obținerea tuturor licitațiilor pentru un job
     function getBids(uint256 jobId) external view returns (Bid[] memory) {
         return bids[jobId];
+    }
+
+    // În caz că cineva trimite ETH direct către contract
+    receive() external payable {
+        revert("Direct ETH transfers not allowed");
     }
 }

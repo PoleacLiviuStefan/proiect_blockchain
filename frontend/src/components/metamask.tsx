@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import ContractABI from "./abi/UpworkPlatform.json"; // ABI-ul contractului
 
-const CONTRACT_ADDRESS = "0xYourContractAddressHere"; // Adresa contractului tău
+const CONTRACT_ADDRESS = "0xf25E1C99FB667648F6E3735Db41034ce0e5904E3"; // Adresa contractului tău
 
 function metamaskConnection() {
   const [account, setAccount] = useState(null); // Adresa utilizatorului conectat
@@ -75,7 +75,7 @@ function metamaskConnection() {
 
   return (
     <div>
-      <h1>Upwork Platform</h1>
+ 
       {!account ? (
         <button onClick={connectWallet}>Connect Wallet</button>
       ) : (
