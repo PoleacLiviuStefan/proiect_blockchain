@@ -95,6 +95,46 @@ const ContractInteraction = () => {
     }
   };
 
+  const selectWinner = async (jobId, bidIndex) => {
+    if (!contract || !signer) {
+      setError('Please connect your wallet first');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const contractWithSigner = contract.connect(signer);
+      const tx = await contractWithSigner.selectWinner(jobId, bidIndex);
+      await tx.wait();
+      await loadJobs();
+    } catch (error) {
+      console.error('Error selecting winner:', error);
+      setError('Failed to select winner. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const completeJob = async (jobId) => {
+    if (!contract || !signer) {
+      setError('Please connect your wallet first');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const contractWithSigner = contract.connect(signer);
+      const tx = await contractWithSigner.completeJob(jobId);
+      await tx.wait();
+      await loadJobs();
+    } catch (error) {
+      console.error('Error completing job:', error);
+      setError('Failed to complete job. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const loadJobs = async () => {
     if (!contract) return;
 
@@ -168,6 +208,12 @@ const ContractInteraction = () => {
       {error && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
           {error}
+          <button 
+            onClick={() => setError(null)} 
+            className="ml-2 text-sm underline"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -194,6 +240,47 @@ const ContractInteraction = () => {
             </button>
           </div>
 
+          {activeView === 'posted' && (
+            <form 
+              className="mb-6"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const description = e.target.description.value;
+                const budget = e.target.budget.value;
+                await postJob(description, budget);
+                e.target.reset();
+              }}
+            >
+              <div className="flex flex-col gap-4">
+                <input
+                  type="text"
+                  name="description"
+                  placeholder="Descriere job"
+                  className="border p-2 rounded"
+                  required
+                  disabled={loading}
+                />
+                <input
+                  type="number"
+                  name="budget"
+                  step="0.000001"
+                  min="0.000001"
+                  placeholder="Buget în ETH"
+                  className="border p-2 rounded"
+                  required
+                  disabled={loading}
+                />
+                <button
+                  type="submit"
+                  className="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600"
+                  disabled={loading}
+                >
+                  {loading ? 'Se procesează...' : 'Postează Job'}
+                </button>
+              </div>
+            </form>
+          )}
+
           <ul className="space-y-4">
             {filteredJobs().map((job) => (
               <li key={job.id} className="border p-4 rounded shadow">
@@ -204,30 +291,66 @@ const ContractInteraction = () => {
                 <p><strong>Angajator:</strong> {job.employer}</p>
                 <p><strong>Finalizat:</strong> {job.isCompleted ? 'Da' : 'Nu'}</p>
                 <p><strong>Câștigător:</strong> {job.winner !== ethers.ZeroAddress ? job.winner : 'Niciunul'}</p>
-                <h4>Participanți:</h4>
-                <ul>
-                  {job.bids.map((bid, index) => (
-                    <li key={index}>
-                      {bid.freelancer} - {bid.bidAmount} ETH
-                    </li>
-                  ))}
-                </ul>
-                {!job.isCompleted && job.employer !== currentAddress && (
-                  job.minBidFreelancer?.toLowerCase() === currentAddress?.toLowerCase() ? (
-                    <p className="mt-2 text-orange-600 font-semibold">Deja licitat</p>
-                  ) : (
+                
+                <div className="mt-4">
+                  <h4 className="font-bold mb-2">Participanți:</h4>
+                  <ul className="space-y-2">
+                    {job.bids.map((bid, index) => (
+                      <li key={index} className="flex items-center gap-2 justify-between">
+                        <span>{bid.freelancer} - {bid.bidAmount} ETH</span>
+                        
+                        {job.employer.toLowerCase() === currentAddress?.toLowerCase() && 
+                         !job.isCompleted && 
+                         job.winner == ethers.ZeroAddress && 
+                         job.currentBid == bid.bidAmount && (
+                          <button
+                            onClick={() => selectWinner(job.id, index)}
+                            className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
+                            disabled={loading}
+                          >
+                           Select Winner
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="mt-4 space-x-2">
+                  {  job.winner.toLowerCase() == currentAddress?.toLowerCase() ? (
+                   <p className="text-green-600 font-semibold">Ati castigat licitatia!</p> ) :
+                  !job.isCompleted && job.employer !== currentAddress && (
+                    job.minBidFreelancer?.toLowerCase() === currentAddress?.toLowerCase() ? (
+                      <p className="text-orange-600 font-semibold">Deja licitat</p>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          const bidAmount = prompt('Introduceți suma licitată (ETH):');
+                          if (bidAmount) applyForJob(job.id, bidAmount);
+                        }}
+                        className="bg-green-500 text-white py-2 px-4 rounded hover:bg-green-600"
+                        disabled={loading}
+                      >
+                        Aplică
+                      </button>
+                    )
+                  )}
+
+                  {job.employer.toLowerCase() === currentAddress?.toLowerCase() && 
+                   job.winner != ethers.ZeroAddress && 
+                   !job.isCompleted && (
                     <button
-                      onClick={() => {
-                        const bidAmount = prompt('Introduceți suma licitată (ETH):');
-                        if (bidAmount) applyForJob(job.id, bidAmount);
-                      }}
-                      className="mt-2 bg-green-500 text-white py-2 px-4 rounded hover:bg-green-600"
+                      onClick={() => completeJob(job.id)}
+                      className="bg-purple-500 text-white py-2 px-4 rounded hover:bg-purple-600"
                       disabled={loading}
                     >
-                      Aplică
+                      Complete Job
                     </button>
-                  )
-                )}
+                  )}
+
+    
+
+                </div>
               </li>
             ))}
           </ul>
