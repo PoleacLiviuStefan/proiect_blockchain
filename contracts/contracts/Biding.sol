@@ -47,27 +47,37 @@ contract Biding {
             budget: msg.value,
             isCompleted: false,
             winner: payable(address(0)),
-            lockedFunds: msg.value // Blocăm fondurile când se creează job-ul
+            lockedFunds: msg.value // Blocam fondurile când se creează job-ul
         });
 
         emit JobPosted(jobCounter, msg.sender, msg.value);
     }
 
-    function placeBid(uint256 jobId, uint256 bidAmount) external jobExists(jobId) {
+  function placeBid(uint256 jobId, uint256 bidAmount) external jobExists(jobId) {
         require(msg.sender != jobs[jobId].employer, "Employer cannot bid on their own job");
         require(!jobs[jobId].isCompleted, "Job is already completed");
         require(jobs[jobId].winner == address(0), "Winner already selected");
         require(bidAmount > 0, "Bid amount must be greater than zero");
         require(bidAmount < jobs[jobId].budget, "Bid must be lower than job budget");
 
+        // Verificăm dacă utilizatorul are deja o ofertă și o actualizăm
+        bool bidExists = false;
         for(uint i = 0; i < bids[jobId].length; i++) {
-            require(bids[jobId][i].freelancer != msg.sender, "You have already placed a bid");
+            if(bids[jobId][i].freelancer == msg.sender) {
+                require(bidAmount < bids[jobId][i].bidAmount, "New bid must be lower than your previous bid");
+                bids[jobId][i].bidAmount = bidAmount;
+                bidExists = true;
+                break;
+            }
         }
 
-        bids[jobId].push(Bid({
-            freelancer: payable(msg.sender),
-            bidAmount: bidAmount
-        }));
+        // Dacă nu există o ofertă anterioară, adăugăm una nouă
+        if (!bidExists) {
+            bids[jobId].push(Bid({
+                freelancer: payable(msg.sender),
+                bidAmount: bidAmount
+            }));
+        }
 
         emit BidPlaced(jobId, msg.sender, bidAmount);
     }
@@ -88,7 +98,7 @@ contract Biding {
         require(!jobs[jobId].isCompleted, "Job already completed");
         require(jobs[jobId].lockedFunds > 0, "No funds locked for this job");
 
-        // Găsim suma licitată de câștigător
+        // Gasim suma licitata de castigator
         uint256 winnerBid = 0;
         for(uint i = 0; i < bids[jobId].length; i++) {
             if(bids[jobId][i].freelancer == jobs[jobId].winner) {
@@ -99,10 +109,10 @@ contract Biding {
 
         require(winnerBid > 0, "Winner bid not found");
 
-        // Transferăm suma licitată către câștigător
+        // Transferam suma licitata catre castigator
         jobs[jobId].winner.transfer(winnerBid);
 
-        // Calculăm și transferăm restul către angajator
+        // Calculam și transferam restul catre angajator
         uint256 remainingFunds = jobs[jobId].budget - winnerBid;
         if(remainingFunds > 0) {
             jobs[jobId].employer.transfer(remainingFunds);
