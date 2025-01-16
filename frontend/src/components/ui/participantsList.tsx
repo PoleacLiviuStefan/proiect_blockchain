@@ -17,7 +17,7 @@ const ParticipantsList = ({job, contract, signer, currentAddress, setShowPartici
           throw new Error('Failed to select winner. Please try again.');
         }
     };
-
+    console.log("job este: ",job)
     return (
         <div className='flex items-center justify-center w-full h-full'>
             <div className='relative w-[420px] h-[500px] bg-gray-700 text-white shadow-xl rounded-[12px] p-10'>
@@ -32,7 +32,7 @@ const ParticipantsList = ({job, contract, signer, currentAddress, setShowPartici
                     {job.bids.map((bid, index) => (
                         <li 
                             key={index} 
-                            className="flex flex-col md:flex-row items-center gap-2 justify-between border border-gray-500 rounded-lg p-2"
+                            className="flex flex-col  items-center gap-2 justify-between border border-gray-500 rounded-lg p-2"
                         >
                             <div className='flex flex-col items-center   text-center  break-all w-full md:w-auto'>
                                 <span className="text-sm">{bid.freelancer}</span>
@@ -43,6 +43,7 @@ const ParticipantsList = ({job, contract, signer, currentAddress, setShowPartici
                              !job.isCompleted && 
                              job.winner === ethers.ZeroAddress && 
                              job.currentBid === bid.bidAmount && (
+
                                 <button
                                     onClick={() => {
                                         try {

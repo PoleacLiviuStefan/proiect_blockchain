@@ -1,34 +1,30 @@
 import { ethers } from 'ethers';
-import contractJSON from '../../../contracts/artifacts/contracts/Biding.sol/Biding.json'
-const contractABI = contractJSON.abi
-// Adresa contractului implementat
-const contractAddress = '0xEFD6113Ed07c3152cEf9CC885aF2e9a645683382';
+import BidingArtifact from '../../../contracts/artifacts/contracts/Biding.sol/Biding.json';
+import BidingEscrowArtifact from '../../../contracts/artifacts/contracts/FreelanceEscrow.sol/FreelanceEscrow.json';
 
+const BIDING_ADDRESS = "0x5B6Cf21bb0e8cB43d0bbadda249BcFe4C2703Cef";
+const BIDING_ESCROW_ADDRESS = "0xc93276FA7123aE3E3cA3F5E0fCBb1dFb4e15AC51";
 
-// Funcție pentru a obține un provider și un semnatar
 export const getBlockchain = async () => {
-  // Verifică dacă MetaMask este instalat
-  if (typeof window.ethereum !== 'undefined') {
-    try {
-      // Solicită permisiunea utilizatorului pentru a accesa conturile
-      await window.ethereum.request({ method: 'eth_requestAccounts' });
-
-      // Creează un provider
-      const provider = new ethers.BrowserProvider(window.ethereum);
-
-      // Obține semnatarul
-      const signer = await provider.getSigner();
-
-      // Creează o instanță a contractului
-      const contract = new ethers.Contract(contractAddress, contractABI, signer);
-
-      return { contract, signer };
-    } catch (error) {
-      console.error('Eroare la conectarea cu MetaMask:', error);
-      return null;
+    if (typeof window.ethereum === 'undefined') {
+        return { signer: undefined, contract: undefined, escrowContract: undefined };
     }
-  } else {
-    console.error('MetaMask nu este instalat.');
-    return null;
-  }
-};
+
+    await window.ethereum.request({ method: 'eth_requestAccounts' });
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+
+    const contract = new ethers.Contract(
+        BIDING_ADDRESS,
+        BidingArtifact.abi,
+        signer
+    );
+
+    const escrowContract = new ethers.Contract(
+        BIDING_ESCROW_ADDRESS,
+        BidingEscrowArtifact.abi,
+        signer
+    );
+
+    return { signer, contract, escrowContract };
+}

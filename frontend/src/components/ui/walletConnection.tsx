@@ -33,7 +33,7 @@ const WalletConnection = ({walletBalance,setWalletBalance}) => {
           setWalletBalance(balanceInEth);
         } catch (error) {
           console.error("Error connecting to wallet:", error);
-          alert("An error occurred while connecting to the wallet. Please try again.");
+          alert(" A avut loc o eroare in timp ce se incerca conectarea la portofel. Te rog incearca din nou.");
         }
       }
   return (

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { getBlockchain } from '../../lib/ethereum';
+import { getBlockchain } from '../lib/ethereum';
 import { ethers } from 'ethers';
 import { parseEther, formatEther } from 'ethers';
 import Job from './ui/job';
 
 const ContractInteraction = () => {
   const [contract, setContract] = useState(null);
+  const [escrowContract, setEscrowContract] = useState(null);
   const [signer, setSigner] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -17,9 +18,10 @@ const ContractInteraction = () => {
   useEffect(() => {
     const init = async () => {
       try {
-        const { contract, signer } = await getBlockchain();
+        const { contract, escrowContract, signer } = await getBlockchain();
         if (contract && signer) {
           setContract(contract);
+          setEscrowContract(escrowContract);
           setSigner(signer);
           const address = await signer.getAddress();
           setCurrentAddress(address);
@@ -33,31 +35,67 @@ const ContractInteraction = () => {
     init();
   }, []);
 
-  const postJob = async (description, budget) => {
-    if (!contract || !signer) {
-      setError('Please connect your wallet first');
-      return;
+  
+  useEffect(() => {
+    if (contract && currentAddress && escrowContract) {
+      loadJobs();
     }
+}, [contract, currentAddress, escrowContract]);
 
-    setLoading(true);
+
+  // Funcție pentru verificarea job-ului prin escrow
+  const verifyJobInEscrow = async (jobId) => {
+    if (!escrowContract) return false;
+    
     try {
-      const contractWithSigner = contract.connect(signer);
-      const budgetInWei = parseEther(budget.toString());
-
-      // Modificat pentru a trimite budget ca value în tranzacție
-      const tx = await contractWithSigner.postJob(description, {
-        value: budgetInWei
-      });
-      
-      await tx.wait();
-      await loadJobs();
+      const isValid = await escrowContract.verifyJob(jobId);
+      console.log(`Job ${jobId} escrow verification:`, isValid);
+      return isValid;
     } catch (error) {
-      console.error('Error posting job:', error);
-      setError('Failed to post job. Please try again.');
-    } finally {
-      setLoading(false);
+      console.error('Error verifying job in escrow:', error);
+      return false;
     }
-  };
+};
+
+const postJob = async (description, budget) => {
+  if (!contract || !signer || !escrowContract) {
+    setError('Te rog conecteaza portofelul mai intai.');
+    return;
+  }
+
+  setLoading(true);
+  try {
+    const contractWithSigner = contract.connect(signer);
+    const budgetInWei = parseEther(budget.toString());
+
+    console.log('Posting job with budget:', formatEther(budgetInWei), 'ETH');
+    
+    const tx = await contractWithSigner.postJob(description, {
+      value: budgetInWei
+    });
+    
+    const receipt = await tx.wait();
+    console.log('Job posted, transaction hash:', receipt.hash);
+    
+    // Verificăm job-ul în escrow după creare
+    const jobId = await contract.jobCounter();
+    const isValid = await verifyJobInEscrow(jobId);
+    
+    if (!isValid) {
+      setError('Job-ul nu a putut fi verificat in escrow');
+    } else {
+      console.log('Job verified in escrow successfully');
+    }
+    
+    await loadJobs();
+  } catch (error) {
+    console.error('Error posting job:', error);
+    setError(`Postarea job-ului a esuat: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const applyForJob = async (jobId, bidAmount) => {
     if (!contract || !signer) {
@@ -78,11 +116,11 @@ const ContractInteraction = () => {
       const bidAmountInWei = parseEther(bidAmount);
 
       if (bidAmountInWei >= minBid) {
-        throw new Error('Bid amount must be lower than the current lowest bid!');
+        throw new Error('Oferta trebuie sa fie mai mica decat cea precedenta');
       }
 
       if (minBidFreelancer?.toLowerCase() === currentAddress?.toLowerCase()) {
-        throw new Error('You already have the lowest bid!');
+        throw new Error('Ai deja oferta cea mai mica');
       }
 
       // Modificat pentru a trimite bidAmount ca parametru, nu ca value
@@ -95,7 +133,7 @@ const ContractInteraction = () => {
     } catch (error) {
       console.error('Error applying for job:', error);
       if (error.code === 'CALL_EXCEPTION') {
-        throw new Error('Transaction failed. Please make sure the bid amount is correct.');
+        throw new Error('Transaction failed. Please make sure the bid amount is correct. Tranzactia a esuat. Te rog asigura-te ca suma licitata este corecta');
       }
       throw error;
     } finally {
@@ -103,7 +141,7 @@ const ContractInteraction = () => {
     }
   };
   const loadJobs = async () => {
-    if (!contract) return;
+    if (!contract || !escrowContract) return;
 
     setLoading(true);
     try {
@@ -113,6 +151,7 @@ const ContractInteraction = () => {
       for (let i = 1; i <= Number(jobCounter); i++) {
         const job = await contract.jobs(i);
         const bids = await contract.getBids(i);
+        const isVerifiedInEscrow = await verifyJobInEscrow(i);
 
         const minBid = bids.length
           ? Math.min(...bids.map(bid => Number(bid.bidAmount)))
@@ -129,6 +168,7 @@ const ContractInteraction = () => {
           employer: job.employer,
           isCompleted: job.isCompleted,
           winner: job.winner,
+          isVerifiedInEscrow, // Adăugăm starea verificării escrow
           bids: bids.map(bid => ({
             freelancer: bid.freelancer,
             bidAmount: formatEther(bid.bidAmount),
@@ -143,8 +183,7 @@ const ContractInteraction = () => {
     } finally {
       setLoading(false);
     }
-  };
-
+};
   useEffect(() => {
     if (contract && currentAddress) {
       loadJobs();
@@ -162,43 +201,43 @@ const ContractInteraction = () => {
     }
   };
 
-  const handleNetworkChange = async () => {
-    try {
-      await window.ethereum.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: '0x13881' }], // Mumbai testnet
-      });
-    } catch (error) {
-      if (error.code === 4902) {
-        try {
-          await window.ethereum.request({
-            method: 'wallet_addEthereumChain',
-            params: [
-              {
-                chainId: '0x13881',
-                chainName: 'Mumbai Testnet',
-                nativeCurrency: {
-                  name: 'MATIC',
-                  symbol: 'MATIC',
-                  decimals: 18,
-                },
-                rpcUrls: ['https://rpc-mumbai.maticvigil.com'],
-                blockExplorerUrls: ['https://mumbai.polygonscan.com'],
-              },
-            ],
-          });
-        } catch (addError) {
-          console.error('Error adding network:', addError);
-        }
-      }
-      console.error('Error switching network:', error);
-    }
-  };
+  // const handleNetworkChange = async () => {
+  //   try {
+  //     await window.ethereum.request({
+  //       method: 'wallet_switchEthereumChain',
+  //       params: [{ chainId: '0x13881' }], // Mumbai testnet
+  //     });
+  //   } catch (error) {
+  //     if (error.code === 4902) {
+  //       try {
+  //         await window.ethereum.request({
+  //           method: 'wallet_addEthereumChain',
+  //           params: [
+  //             {
+  //               chainId: '0x13881',
+  //               chainName: 'Mumbai Testnet',
+  //               nativeCurrency: {
+  //                 name: 'MATIC',
+  //                 symbol: 'MATIC',
+  //                 decimals: 18,
+  //               },
+  //               rpcUrls: ['https://rpc-mumbai.maticvigil.com'],
+  //               blockExplorerUrls: ['https://mumbai.polygonscan.com'],
+  //             },
+  //           ],
+  //         });
+  //       } catch (addError) {
+  //         console.error('Error adding network:', addError);
+  //       }
+  //     }
+  //     console.error('Error switching network:', error);
+  //   }
+  // };
 
   return (
     <div className="p-4 min-h-[400px]">
 
-      {!isConnected && (
+      {/* {!isConnected && (
         <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-4">
           Please connect your wallet to view jobs
           <button
@@ -208,9 +247,9 @@ const ContractInteraction = () => {
             Schimba Reteaua
           </button>
         </div>
-      )}
+      )} */}
 
-      {error && (
+      {/* {error && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
           {error}
           <button 
@@ -220,7 +259,7 @@ const ContractInteraction = () => {
             Dismiss
           </button>
         </div>
-      )}
+      )} */}
 
       {isConnected && (
         <>
@@ -287,20 +326,22 @@ const ContractInteraction = () => {
             </form>
           )}
 </div>
-          <ul className="grid grid-cols-3 gap-4  overflow-y-auto  h-[500px] max-h-[400px] ">
-            {filteredJobs().map((job) => (
-              <Job 
-                key={job.id}
-                job={job}
-                contract={contract}
-                signer={signer}
-                currentAddress={currentAddress}
-                loading={loading}
-                onPlaceBid={applyForJob}
-                onRefresh={loadJobs}
-              />
-            ))}
-          </ul>
+<ul className="grid grid-cols-3 gap-4 overflow-y-auto h-[500px] max-h-[400px]">
+  {filteredJobs().map((job) => (
+    <Job 
+      key={job.id}
+      job={job}
+      contract={contract}
+      escrowContract={escrowContract}
+      signer={signer}
+      currentAddress={currentAddress}
+      loading={loading}
+      onPlaceBid={applyForJob}
+      onRefresh={loadJobs}
+      isVerifiedInEscrow={job.isVerifiedInEscrow}
+    />
+  ))}
+</ul>
         </>
       )}
     </div>
