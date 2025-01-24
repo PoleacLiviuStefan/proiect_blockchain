@@ -1,26 +1,31 @@
-// Importă modulele necesare
 const { ethers } = require("hardhat");
 
 async function main() {
   // Obține contul utilizat pentru implementare
   const [deployer] = await ethers.getSigners();
-  console.log("Implementarea contractului cu contul:", deployer.address);
+  console.log("Implementarea contractelor cu contul:", deployer.address);
 
-  // Creează o instanță a ContractFactory pentru contractul Biding
+  // Deploy Biding contract
   const Biding = await ethers.getContractFactory("Biding");
-
-  // Implementarea contractului
   const biding = await Biding.deploy();
-
-  // Așteaptă finalizarea implementării
   await biding.waitForDeployment();
+  const bidingAddress = await biding.getAddress();
+  console.log("Contractul Biding a fost implementat la adresa:", bidingAddress);
 
-  // Obține adresa contractului implementat
-  const contractAddress = await biding.getAddress();
-  console.log("Contractul Biding a fost implementat la adresa:", contractAddress);
+  // Deploy FreelanceEscrow contract (modificat de la BidingEscrow)
+  const FreelanceEscrow = await ethers.getContractFactory("FreelanceEscrow");
+  const freelanceEscrow = await FreelanceEscrow.deploy(bidingAddress);
+  await freelanceEscrow.waitForDeployment();
+  const escrowAddress = await freelanceEscrow.getAddress();
+  console.log("Contractul FreelanceEscrow a fost implementat la adresa:", escrowAddress);
+
+  // Log toate adresele pentru verificare ușoară
+  console.log("\nAdrese contracte deployate:");
+  console.log("-------------------");
+  console.log("Biding:", bidingAddress);
+  console.log("FreelanceEscrow:", escrowAddress);
 }
 
-// Execută funcția principală și gestionează erorile
 main()
   .then(() => process.exit(0))
   .catch((error) => {
